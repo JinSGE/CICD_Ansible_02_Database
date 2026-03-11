@@ -1,0 +1,39 @@
+---
+- name: Create API ingestion tables (DDL only)
+  become: true
+  become_user: postgres
+  community.postgresql.postgresql_query:
+    db: "{{ app_db_name }}"
+    query: |
+      CREATE TABLE IF NOT EXISTS {{ api_schema }}.weather_mid_temp (
+        id BIGSERIAL PRIMARY KEY,
+        reg_id TEXT,
+        base_date DATE,
+        data JSONB,
+        created_at TIMESTAMP DEFAULT now()
+      );
+
+      CREATE TABLE IF NOT EXISTS {{ api_schema }}.weather_mid_land (
+        id BIGSERIAL PRIMARY KEY,
+        reg_id TEXT,
+        base_date DATE,
+        data JSONB,
+        created_at TIMESTAMP DEFAULT now()
+      );
+
+      CREATE TABLE IF NOT EXISTS {{ api_schema }}.energy_kepco_monthly (
+        id BIGSERIAL PRIMARY KEY,
+        region_code TEXT,
+        ym CHAR(6),
+        data JSONB,
+        created_at TIMESTAMP DEFAULT now()
+      );
+
+      CREATE TABLE IF NOT EXISTS {{ api_schema }}.energy_gas (
+        id BIGSERIAL PRIMARY KEY,
+        region_code TEXT,
+        year CHAR(4),
+        data JSONB,
+        created_at TIMESTAMP DEFAULT now()
+      );
+

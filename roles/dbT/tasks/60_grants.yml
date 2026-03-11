@@ -1,0 +1,44 @@
+---
+- name: Ensure svc_api role exists
+  become: true
+  become_user: postgres
+  community.postgresql.postgresql_user:
+    name: "{{ svc_api_role }}"
+    password: "{{ svc_api_password }}"
+    encrypted: true
+    role_attr_flags: "NOSUPERUSER,NOCREATEDB,NOCREATEROLE,NOINHERIT,LOGIN"
+    state: present
+
+- name: Grant USAGE on schema to svc_api
+  become: true
+  become_user: postgres
+  community.postgresql.postgresql_query:
+    db: "{{ app_db_name }}"
+    query: "GRANT USAGE ON SCHEMA {{ api_schema }} TO {{ svc_api_role }};"
+
+- name: Grant table privileges to svc_api (SELECT/INSERT/UPDATE)
+  become: true
+  become_user: postgres
+  community.postgresql.postgresql_query:
+    db: "{{ app_db_name }}"
+    query: |
+      GRANT SELECT, INSERT, UPDATE ON TABLE
+        {{ api_schema }}.weather_mid_temp,
+        {{ api_schema }}.weather_mid_land,
+        {{ api_schema }}.energy_kepco_monthly,
+        {{ api_schema }}.energy_gas
+      TO {{ svc_api_role }};
+
+- name: Grant sequence privileges to svc_api (USAGE/SELECT)
+  become: true
+  become_user: postgres
+  community.postgresql.postgresql_query:
+    db: "{{ app_db_name }}"
+    query: |
+      GRANT USAGE, SELECT ON SEQUENCE
+        {{ api_schema }}.weather_mid_temp_id_seq,
+        {{ api_schema }}.weather_mid_land_id_seq,
+        {{ api_schema }}.energy_kepco_monthly_id_seq,
+        {{ api_schema }}.energy_gas_id_seq
+      TO {{ svc_api_role }};
+

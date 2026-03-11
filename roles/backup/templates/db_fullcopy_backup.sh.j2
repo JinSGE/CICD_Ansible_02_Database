@@ -1,0 +1,96 @@
+#!/bin/bash
+set -euo pipefail
+
+# ================================
+# Full Copy Backup (pg_basebackup)
+# - storage/NFS 없이 dbb 로컬에 저장
+# - etcd(DCS)에서 Patroni leader를 조회해 Primary를 판별
+# ================================
+
+BACKUP_DIR="{{ fullcopy_backup_dir }}"
+LOG_FILE="{{ fullcopy_log_file }}"
+
+PG_PORT="{{ fullcopy_pg_port }}"
+REPL_USER="{{ patroni_replication_user }}"
+
+ETCD_ENDPOINTS="{{ etcd_endpoints | join(',') }}"
+PATRONI_LEADER_KEY="{{ patroni_namespace.rstrip('/') }}/{{ patroni_scope }}/leader"
+
+mkdir -p "${BACKUP_DIR}"
+
+log() {
+  echo "[$(date '+%F %T')] $*" >> "${LOG_FILE}"
+}
+
+get_primary_by_etcd() {
+  local leader
+  leader=$(ETCDCTL_API=3 /usr/local/bin/etcdctl --endpoints="${ETCD_ENDPOINTS}" get "${PATRONI_LEADER_KEY}" --print-value-only 2>/dev/null || true)
+  if [[ -z "${leader}" ]]; then
+    return 1
+  fi
+
+  case "${leader}" in
+{% for h in groups['db_cluster'] %}
+    {{ h }}) echo "{{ hostvars[h].ansible_host | default(h) }}" ;;
+{% endfor %}
+    *) return 1 ;;
+  esac
+}
+
+get_primary_by_patroni_rest() {
+  # etcd 조회 실패 시: Patroni REST(/master) 직접 probing
+  # HTTP 200을 반환하는 노드가 Primary
+  local ip
+{% for h in groups['db_cluster'] %}
+  ip="{{ hostvars[h].ansible_host | default(h) }}"
+  if [[ "$(curl -sS --max-time 2 -o /dev/null -w '%{http_code}' "http://${ip}:8008/master" 2>/dev/null || true)" == "200" ]]; then
+    echo "${ip}"
+    return 0
+  fi
+{% endfor %}
+  return 1
+}
+
+PRIMARY_IP=""
+if PRIMARY_IP=$(get_primary_by_etcd); then
+  log "Primary resolved by etcd: ${PRIMARY_IP}"
+elif PRIMARY_IP=$(get_primary_by_patroni_rest); then
+  log "Primary resolved by Patroni REST probe: ${PRIMARY_IP}"
+else
+  log "ERROR: Could not resolve primary (etcd/rest). Abort."
+  exit 1
+fi
+
+TS=$(date '+%F_%H%M%S')
+WORK_DIR="${BACKUP_DIR}/work_${TS}"
+OUT_FILE="${BACKUP_DIR}/basebackup_${TS}.tar.gz"
+
+log "===== Full copy backup start: primary=${PRIMARY_IP}:${PG_PORT}, out=${OUT_FILE} ====="
+
+rm -rf "${WORK_DIR}"
+mkdir -p "${WORK_DIR}"
+
+# 물리 백업 (WAL 포함)
+pg_basebackup \
+  -h "${PRIMARY_IP}" \
+  -p "${PG_PORT}" \
+  -U "${REPL_USER}" \
+  -D "${WORK_DIR}" \
+  -X stream \
+  -c fast \
+  --no-password
+
+tar -czf "${OUT_FILE}" -C "${WORK_DIR}" .
+rm -rf "${WORK_DIR}"
+
+log "Backup created: ${OUT_FILE}"
+
+# retention (최근 N개만 유지)
+RETENTION={{ fullcopy_retention_files | default(7) }}
+if [[ "${RETENTION}" -gt 0 ]]; then
+  ls -1t "${BACKUP_DIR}"/basebackup_*.tar.gz 2>/dev/null | tail -n +$((RETENTION+1)) | while read -r f; do
+    rm -f "${f}" && log "Removed old backup: ${f}"
+  done
+fi
+
+log "===== Full copy backup done ====="

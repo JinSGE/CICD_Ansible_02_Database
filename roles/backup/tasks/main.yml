@@ -1,0 +1,12 @@
+---
+# roles/backup/tasks/main.yml
+
+# ------------------------------------------------------------------
+# Storage 서버 없이도 동작하는 "Full Copy" 백업
+# - 백업 노드(dbb) 로컬 디스크에 pg_basebackup(tar.gz) 저장
+# - Primary 판별은 etcd(Patroni DCS)에서 leader key를 읽어 결정
+# ------------------------------------------------------------------
+
+- import_tasks: fullcopy_backup.yml
+  when: inventory_hostname in groups.get('backup_clients', [])
+

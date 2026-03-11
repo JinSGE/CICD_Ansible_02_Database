@@ -1,0 +1,18 @@
+# group_vars/backup_clients.yml
+# backup_clients(dbb)에서 실행되는 "Full Copy" 물리백업 설정
+
+# 백업 저장 경로 (dbb 로컬)
+fullcopy_backup_dir: "/var/backups/postgresql"
+fullcopy_log_file: "/var/log/db_fullcopy_backup.log"
+
+# pg_basebackup 접속 정보
+# - Primary는 스크립트가 etcd/Patroni REST로 자동 판별
+fullcopy_pg_port: 5432
+
+# 보관 정책: 최근 N개 tar.gz만 유지
+fullcopy_retention_files: 7
+
+# 크론 스케줄(기본: 02:10)
+backup_cron_hour: "2"
+backup_cron_minute: "10"
+

@@ -1,0 +1,89 @@
+---
+# roles/backup/tasks/fullcopy_backup.yml
+# 대상: backup_clients 그룹(dbb)
+# 목표:
+#   - NFS/pgBackRest 없이도 "물리 백업(Full Copy)"을 매일 1회 수행
+#   - Patroni(etcd DCS)에서 leader를 조회해 현재 Primary(db-a/db-s)를 자동 판별
+#   - pg_basebackup을 tar.gz로 저장하고, 보관 개수(retention)만큼만 유지
+
+- name: Install packages required for full-copy backup
+  ansible.builtin.dnf:
+    name:
+      - postgresql
+      - postgresql-server
+      - curl
+      - jq
+      - tar
+      - gzip
+    state: present
+
+# etcdctl만 있으면 Patroni DCS(=etcd)에서 leader key를 읽어 Primary를 결정 가능
+# etcd 서버를 설치하는 게 아니라, 클라이언트 바이너리(etcdctl)만 설치
+- name: Download etcd release archive (for etcdctl)
+  ansible.builtin.get_url:
+    url: "{{ etcd_download_url }}"
+    dest: "/tmp/etcd-{{ etcd_version }}.tar.gz"
+    mode: "0644"
+    timeout: 120
+  register: etcdctl_dl
+  until: etcdctl_dl is succeeded
+  retries: 10
+  delay: 5
+
+- name: Extract etcdctl binary
+  ansible.builtin.unarchive:
+    src: "/tmp/etcd-{{ etcd_version }}.tar.gz"
+    dest: /tmp
+    remote_src: true
+    creates: "/tmp/etcd-{{ etcd_version }}-linux-amd64/etcdctl"
+
+- name: Install etcdctl to /usr/local/bin
+  ansible.builtin.copy:
+    src: "/tmp/etcd-{{ etcd_version }}-linux-amd64/etcdctl"
+    dest: /usr/local/bin/etcdctl
+    owner: root
+    group: root
+    mode: "0755"
+    remote_src: true
+
+- name: Ensure backup base directory exists
+  ansible.builtin.file:
+    path: "{{ fullcopy_backup_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+# pg_basebackup은 replication user로 접속하는 게 정석
+# Patroni 템플릿에서 replication user/password가 이미 정의됨
+- name: Install .pgpass for replication user (root)
+  ansible.builtin.template:
+    src: pgpass_root.j2
+    dest: /root/.pgpass
+    owner: root
+    group: root
+    mode: "0600"
+
+- name: Deploy full-copy backup script
+  ansible.builtin.template:
+    src: db_fullcopy_backup.sh.j2
+    dest: /usr/local/bin/db_fullcopy_backup.sh
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Ensure log file exists
+  ansible.builtin.file:
+    path: "{{ fullcopy_log_file }}"
+    state: touch
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Register daily full-copy backup cron
+  ansible.builtin.cron:
+    name: "DB Full Copy (pg_basebackup tar.gz)"
+    minute: "{{ backup_cron_minute | default('10') }}"
+    hour: "{{ backup_cron_hour | default('2') }}"
+    user: root
+    job: "/usr/local/bin/db_fullcopy_backup.sh >> {{ fullcopy_log_file }} 2>&1"

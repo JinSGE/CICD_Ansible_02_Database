@@ -1,0 +1,12 @@
+---
+# roles/backup/defaults/main.yml
+
+# dbb 로컬에 저장하는 full copy 백업 기본값
+fullcopy_backup_dir: "/var/backups/postgresql"
+fullcopy_log_file: "/var/log/db_fullcopy_backup.log"
+
+fullcopy_pg_port: 5432
+fullcopy_retention_files: 7
+
+backup_cron_hour: "2"
+backup_cron_minute: "10"

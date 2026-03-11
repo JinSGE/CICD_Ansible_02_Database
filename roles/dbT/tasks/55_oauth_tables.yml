@@ -1,0 +1,78 @@
+---
+# ------------------------------------------------------------
+# OAuth 테이블 완전본
+# 요구사항:
+# - provider: google/kakao/naver 구분
+# - provider_user_id: provider에서 준 유저 고유 ID
+# - email, nickname(name): users에 저장 가능
+# - profile_image_url: oauth_accounts에 저장 (요청)
+# - role: 단일 role이면 users.role 하나로 충분 (요청)
+# ------------------------------------------------------------
+
+- name: Ensure pgcrypto extension exists (gen_random_uuid)
+  community.postgresql.postgresql_ext:
+    db: "{{ app_db_name }}"
+    name: pgcrypto
+    state: present
+  become_user: postgres
+  when: patroni_is_primary | bool
+
+# users
+- name: Create users table
+  community.postgresql.postgresql_query:
+    db: "{{ app_db_name }}"
+    query: |
+      CREATE TABLE IF NOT EXISTS {{ app_schema }}.users (
+        user_id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+        created_at timestamptz NOT NULL DEFAULT now(),
+        updated_at timestamptz NOT NULL DEFAULT now(),
+        email text,
+        display_name text,
+        status text NOT NULL DEFAULT 'active',
+        role text NOT NULL DEFAULT 'ROLE_USER'
+      );
+      CREATE INDEX IF NOT EXISTS idx_users_email
+        ON {{ app_schema }}.users(email);
+  become_user: postgres
+  when: patroni_is_primary | bool
+
+# oauth_accounts
+- name: Create oauth_accounts table
+  community.postgresql.postgresql_query:
+    db: "{{ app_db_name }}"
+    query: |
+      CREATE TABLE IF NOT EXISTS {{ app_schema }}.oauth_accounts (
+        oauth_id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_id uuid NOT NULL REFERENCES {{ app_schema }}.users(user_id) ON DELETE CASCADE,
+        provider text NOT NULL,
+        provider_user_id text NOT NULL,
+        profile_image_url text,
+        created_at timestamptz NOT NULL DEFAULT now(),
+        updated_at timestamptz NOT NULL DEFAULT now(),
+        UNIQUE(provider, provider_user_id),
+        UNIQUE(user_id, provider)
+      );
+      CREATE INDEX IF NOT EXISTS idx_oauth_accounts_user_id
+        ON {{ app_schema }}.oauth_accounts(user_id);
+      CREATE INDEX IF NOT EXISTS idx_oauth_accounts_provider
+        ON {{ app_schema }}.oauth_accounts(provider);
+  become_user: postgres
+  when: patroni_is_primary | bool
+
+# oauth_tokens
+- name: Create oauth_tokens table
+  community.postgresql.postgresql_query:
+    db: "{{ app_db_name }}"
+    query: |
+      CREATE TABLE IF NOT EXISTS {{ app_schema }}.oauth_tokens (
+        token_id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+        oauth_id uuid NOT NULL REFERENCES {{ app_schema }}.oauth_accounts(oauth_id) ON DELETE CASCADE,
+        refresh_token text,
+        expires_at timestamptz,
+        scope text,
+        created_at timestamptz NOT NULL DEFAULT now(),
+        updated_at timestamptz NOT NULL DEFAULT now()
+      );
+  become_user: postgres
+  when: patroni_is_primary | bool
+

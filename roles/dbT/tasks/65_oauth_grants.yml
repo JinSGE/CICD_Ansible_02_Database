@@ -1,0 +1,36 @@
+# roles/dbT/tasks/65_oauth_grants.yml
+---
+# ------------------------------------------------------------
+# OAuth 테이블/컬럼에 대한 권한
+# - api_app: SELECT/INSERT/UPDATE 가능 (토큰 저장/갱신 때문에)
+# - dbT: 소유권/DDL 담당 계정이 필요하면 별도 처리 (현재는 postgres가 owner)
+# ------------------------------------------------------------
+
+- name: Grant usage on schema to api role
+  community.postgresql.postgresql_query:
+    db: "{{ app_db_name }}"
+    query: |
+      GRANT USAGE ON SCHEMA {{ app_schema }} TO {{ api_db_user }};
+  become_user: postgres
+  when: patroni_is_primary | bool
+
+- name: Grant OAuth table privileges to api role
+  community.postgresql.postgresql_query:
+    db: "{{ app_db_name }}"
+    query: |
+      GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE
+        {{ app_schema }}.users,
+        {{ app_schema }}.oauth_accounts,
+        {{ app_schema }}.oauth_tokens
+      TO {{ api_db_user }};
+  become_user: postgres
+  when: patroni_is_primary | bool
+
+- name: Ensure api role can use sequences (if any serial/identity added later)
+  community.postgresql.postgresql_query:
+    db: "{{ app_db_name }}"
+    query: |
+      GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA {{ app_schema }} TO {{ api_db_user }};
+  become_user: postgres
+  when: patroni_is_primary | bool
+
