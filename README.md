@@ -1,4 +1,4 @@
-﻿# CICD_Ansible_02_Database - Database Layer: PostgreSQL HA Cluster with Patroni & etcd
+﻿# CICD_Ansible_02_Database: PostgreSQL HA Cluster with Patroni & etcd
 
 본 프로젝트는 **PostgreSQL 고가용성(HA) 클러스터**를 구축하고 운영하기 위한 Ansible 플레이북과 구성 파일들을 포함하고 있습니다. **Patroni**를 통한 자동 페일오버, **etcd**를 이용한 분산 상태 저장, 그리고 **HAProxy**를 전측(Proxy)으로 배치하여 안정적인 데이터베이스 레이어를 제공합니다.
 
@@ -59,3 +59,4 @@ ansible-playbook -i inventory/prod.ini site.yml
 *   **고가용성**: Patroni를 통한 자동 리더 승격 및 HAProxy를 통한 투명한 접속 지원.
 *   **보안**: Ansible Vault를 활용한 패스워드 및 비밀 키 관리.
 *   **자동화**: DB 설치부터 사용자 계정 생성, 백업 설정까지 전 과정을 자동화.
+
